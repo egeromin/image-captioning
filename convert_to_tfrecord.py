@@ -35,7 +35,7 @@ from scipy.misc import imsave
 import tensorflow as tf
 import tensorflow.contrib.eager as tfe
 
-from image_captioning import config
+import config
 # from image_captioning import config
 # from image_captioning import config
 # from image_captioning.data import make_data_generator
