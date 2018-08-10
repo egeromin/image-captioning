@@ -9,13 +9,14 @@ from keras.callbacks import ModelCheckpoint, TensorBoard
 # import ipdb
 import argparse
 
+import ipdb
+
 from convert_to_tfrecord import parse_tfrecord
 import config
 from data import make_data_generator
 from convert_to_tfrecord import load_conversions
 
  #tf.enable_eager_execution()
-
 
 
 class ExpandDims(Layer):
@@ -29,23 +30,40 @@ class ExpandDims(Layer):
         return tf.expand_dims(input_tensor, axis=self.axis)
 
     def compute_output_shape(self, input_shape):
-            return input_shape[:1] + (1,) + input_shape[1:]
+        return input_shape[:self.axis] + (1,) + input_shape[self.axis:]
+
+
+class DropFirstTimeStep(Layer):
+    """Custom layer for dropping the first time step outputted by an RNN"""
+
+    def call(self, input_tensor):
+        # ipdb.set_trace()
+        # if tf.rank(input_tensor) != 3:
+        #     raise NotImplementedError("DropFirstTimeStep not implemented for "
+        #                               "tensors of rank greater than 4")
+        # have to run in a session to get the result
+        # nevermind for now
+        return input_tensor[:,1:,:]
+
+    def compute_output_shape(self, input_shape):
+        a, b, c = input_shape 
+        return (a, b-1, c)
 
 
 def image_captioning_model(seq_length, hidden_size, vocabulary_size):
     image = Input(shape=(299, 299, 3))
     inception_model = InceptionV3(weights='imagenet')
 
-    text_labels = Input(shape=(seq_length,))
+    text_labels = Input(shape=(1+seq_length,))
 
-    embedding_layer = Embedding(vocabulary_size, hidden_size,
-                                input_length=seq_length)
+    embedding_layer = Embedding(vocabulary_size+1, hidden_size,
+                                input_length=1+seq_length)
+    # The +1 is for the start word, at index `vocabulary_size`
     embedding = embedding_layer(text_labels)
 
     lstm = LSTM(hidden_size, return_sequences=True)
 
     image_classes = inception_model(image)
-
     
     # In order to change the dimensions of `image_classes`, we
     # define a custom layer `ExpandDims`, because
@@ -56,15 +74,10 @@ def image_captioning_model(seq_length, hidden_size, vocabulary_size):
     embedding_with_input_image = \
         keras.layers.concatenate([image_classes_expanded, embedding], axis=1)
 
-    # We are not using a special start word, or designating
-    # the start word any differently. Instead, we feed the image
-    # classes directly into the LSTM as the first input in the
-    # sequence by adjusting the shape of the embedding vector.
-    # TODO:  Look into why a start word is necessary
-    
     lstm_outputs = lstm(embedding_with_input_image)
+    lstm_outputs_dropped = DropFirstTimeStep()(lstm_outputs)
     dropout_layer = Dropout(0.5)
-    regularized_lstm_outputs = dropout_layer(lstm_outputs)
+    regularized_lstm_outputs = dropout_layer(lstm_outputs_dropped)
 
     fc_layer = TimeDistributed(Dense(vocabulary_size))
     fc_activation = Activation('softmax')
@@ -79,8 +92,8 @@ def image_captioning_model(seq_length, hidden_size, vocabulary_size):
 
 def train(model, train_data_generator, valid_data_generator,
           sz_epoch=200, num_epochs=200, valid_steps=10,
-          checkpoints_dir='./image_captioning/checkpoints/',
-          tboard_dir='./image_captioning/tensorboard/'):
+          checkpoints_dir='./checkpoints/',
+          tboard_dir='./tensorboard/'):
 
     callbacks = [
         ModelCheckpoint(checkpoints_dir + 'epoch{epoch:02d}.hdf5',

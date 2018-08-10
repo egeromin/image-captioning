@@ -28,6 +28,8 @@ import os
 import subprocess
 import itertools
 
+import ipdb
+
 import numpy as np
 from scipy.misc import imsave
 import tensorflow as tf
@@ -271,6 +273,7 @@ def main():
 def parse_tfrecord(path_tfrecord=None, pattern_tfrecord=None, gzipped=False,
                    num_chunks=1, seq_length=50, end_token=1,
                    vocabulary_size=10000):
+    # ipdb.set_trace()
     if path_tfrecord is None and pattern_tfrecord is None:
         raise ValueError("One of `path_tfrecord` or `pattern_tfrecord` "
                          " must be set")
@@ -294,13 +297,13 @@ def parse_tfrecord(path_tfrecord=None, pattern_tfrecord=None, gzipped=False,
                           dtype=tf.int32) * end_token
         padding_output = tf.ones(shape=[1 + seq_length - tf.shape(caption_no_pad)[0]],
                           dtype=tf.int32) * end_token
+        start_word = tf.ones(shape=[1], dtype=tf.int32) * vocabulary_size
 
-        caption = tf.concat([caption_no_pad, padding], axis=0)
+        caption = tf.concat([start_word, caption_no_pad, padding], axis=0)
         caption_output = tf.concat([caption_no_pad, padding_output], axis=0)
 
         one_hot_caption = tf.one_hot(caption_output, depth=vocabulary_size,
                                      dtype=tf.float32)
-
         # caption padded with full stops to reach seq_length
         return (image, caption), one_hot_caption
     

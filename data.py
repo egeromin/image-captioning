@@ -9,10 +9,11 @@ from keras import backend as K
 import tensorflow as tf
 import tensorflow.contrib.eager as tfe
 
-from image_captioning.convert_to_tfrecord import parse_tfrecord, \
-    load_conversions
-from image_captioning import config
+import ipdb
 
+from convert_to_tfrecord import parse_tfrecord, \
+    load_conversions
+import config
 
 
 def tuple_to_list_middleware(inputs_captions):
@@ -58,6 +59,7 @@ def make_data_generator(stage='train', num_chunks=1):
                              vocabulary_size=vocabulary_size)
     dataset = dataset.repeat()  # repeat dataset indefinitely
     dataset = dataset.batch(config.batch_size)
+    # ipdb.set_trace()
     return DataGenerator(dataset)
 
 

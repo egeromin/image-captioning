@@ -1,12 +1,12 @@
 import tensorflow as tf
 import keras
-from keras.models import load_model
+from keras.models import load_model, Model
 import os
 import numpy as np
 
 from collections import OrderedDict
 
-# import ipdb
+import ipdb
 import argparse
 import json
 
@@ -47,6 +47,8 @@ def load_images(images_dir, limit=None):
 
 
 def make_prediction(model, input_images, word_from_id, seq_length=10):
+    imagenet_layer = Model(inputs=model.input,
+                           outputs=model.layers[1].get_output_at(-1))
 
     captions = np.zeros((input_images.shape[0], seq_length), dtype=np.int32)
 
@@ -58,6 +60,10 @@ def make_prediction(model, input_images, word_from_id, seq_length=10):
 
         captions[:,i+1] = \
                 predicted_captions[:,i+1,:].argmax(axis=-1)
+
+    imagenet_output = imagenet_layer.predict([input_images, captions])
+    ipdb.set_trace() # check if the output of the imagenet model is always
+    # constant
 
     # word ids to sentences
     prepared_captions = []
