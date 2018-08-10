@@ -47,25 +47,31 @@ def load_images(images_dir, limit=None):
 
 
 def make_prediction(model, input_images, word_from_id, seq_length=10):
-    imagenet_layer = Model(inputs=model.input,
-                           outputs=model.layers[1].get_output_at(-1))
+    # imagenet_layer = Model(inputs=model.input,
+    #                        outputs=model.layers[1].get_output_at(-1))
+    # used for debugging
 
-    captions = np.zeros((input_images.shape[0], seq_length), dtype=np.int32)
+    vocabulary_size = max(word_from_id.keys()) + 1
+    captions = np.ones((input_images.shape[0], 1 + seq_length), 
+                       dtype=np.int32) * vocabulary_size
 
-    for i in range(seq_length-1):
+    for i in range(seq_length):
         predicted_captions = model.predict([input_images, captions])  # output is 1-hot encoded
         assert(len(predicted_captions.shape) == 3)
         predicted_captions = predicted_captions[:,:-1,:]  # drop the last token
-        assert(predicted_captions.shape[0:2] == captions.shape)
+        assert(predicted_captions.shape[0] == captions.shape[0])
+        assert(predicted_captions.shape[1] == captions.shape[1]-1)
 
         captions[:,i+1] = \
-                predicted_captions[:,i+1,:].argmax(axis=-1)
+                predicted_captions[:,i,:].argmax(axis=-1)
 
-    imagenet_output = imagenet_layer.predict([input_images, captions])
-    ipdb.set_trace() # check if the output of the imagenet model is always
+    # imagenet_output = imagenet_layer.predict([input_images, captions])
+    # ipdb.set_trace() # check if the output of the imagenet model is always
     # constant
 
     # word ids to sentences
+    captions = captions[:,1:]  # drop start word
+    # ipdb.set_trace()
     prepared_captions = []
     for i in range(captions.shape[0]):
         caption_words = []
