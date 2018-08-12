@@ -166,7 +166,11 @@ def write_single_record(tfrecord, data, seq_length, stage):
     caption = data['tokenized_caption']
     assert(len(caption) == len(data['sanitized_caption']))
     np_caption = np.array(caption).astype(np.int32)
-    image = load_image(data['image_id'], stage)
+    try:
+        image = load_image(data['image_id'], stage)
+    except OSError:
+        print("Encountered OSError when reading image, skipping")
+        return
 
     feature = {
         'image': _bytes_feature(image.tobytes()),
