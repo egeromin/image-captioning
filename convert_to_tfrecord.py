@@ -47,7 +47,7 @@ CAPTIONS_FILE = "./data/mscoco/annotations/captions_{stage}2014.json"
 IMAGES_DIR = "./data/mscoco/{stage}2014"
 WORD_ID_CONVERSION = "./data/mscoco/word_id.json"
 
-TFRECORD_FILE = "./data/mscoco/{stage}.tfrecord.{chunk}"
+TFRECORD_FILE = "./data/mscoco/{stage}.tfrecord.{chunk}.gz"
 
 
 def get_full_image_path(image_id, stage='train'):
@@ -166,7 +166,11 @@ def write_single_record(tfrecord, data, seq_length, stage):
     caption = data['tokenized_caption']
     assert(len(caption) == len(data['sanitized_caption']))
     np_caption = np.array(caption).astype(np.int32)
-    image = load_image(data['image_id'], stage)
+    try:
+        image = load_image(data['image_id'], stage)
+    except OSError:
+        print("Encountered OSError when reading image, skipping")
+        return
 
     feature = {
         'image': _bytes_feature(image.tobytes()),
@@ -195,7 +199,7 @@ def load_conversions():
 
 
 def to_tfrecord(stage='train', shuffle=True, limit=None, path_tfrecord=None,
-                chunk=1, num_chunks=1):
+                chunk=1, num_chunks=1, gzip=False):
     """
     Convert a specific stage to tfrecord. If the stage is train, it also
     computes the id_from_word and word_from_id dictionaries; otherwise,
@@ -220,7 +224,7 @@ def to_tfrecord(stage='train', shuffle=True, limit=None, path_tfrecord=None,
         random.seed(123)  # use random seed for consistent shuffling
         random.shuffle(loaded_data)
 
-    if limit is None:
+    if limit is None or limit == 0:
         limit = len(loaded_data)
 
     loaded_data = loaded_data[:limit]
@@ -233,13 +237,20 @@ def to_tfrecord(stage='train', shuffle=True, limit=None, path_tfrecord=None,
 
     if path_tfrecord is None:
         path_tfrecord = TFRECORD_FILE.format(stage=stage, chunk=chunk)
-    with tf.python_io.TFRecordWriter(path_tfrecord) as tfrecord:
+
+    writer_options = None
+    if gzip:
+        writer_options = tf.python_io.TFRecordOptions(
+            tf.python_io.TFRecordCompressionType.GZIP)
+
+    with tf.python_io.TFRecordWriter(path_tfrecord, writer_options) as tfrecord:
         for i, data in enumerate(loaded_data):
 
             write_single_record(tfrecord, data, seq_length, stage)
 
             if (i+1) % 1000 == 0:
                 print("Processed {} of {}".format(i+1, int(sz_chunk)))
+    print("Done")
     
     
 def main():
@@ -255,6 +266,8 @@ def main():
                         type=int, default=1)
     parser.add_argument("--stage", help="Stage to process. One of 'train', "
                         "'val' or 'test'", default='train')
+    parser.add_argument("--gzip", help="GZIP output file?",
+                        action='store_true')
     args = parser.parse_args()
 
     print(args.test)
@@ -267,7 +280,7 @@ def main():
         unittest.main()
     else:
         to_tfrecord(args.stage, limit=args.limit, chunk=args.chunk,
-                    num_chunks=args.num_chunks)
+                    num_chunks=args.num_chunks, gzip=args.gzip)
 
 
 def parse_tfrecord(path_tfrecord=None, pattern_tfrecord=None, gzipped=False,

@@ -89,7 +89,7 @@ def main():
                                      "captioning model")
     parser.add_argument("--model_path", help="Path to the trained model", 
                         default="./checkpoints/final.hdf5")
-    parser.add_argument("--image_dir", default="./data/mscoco/train2014",
+    parser.add_argument("--image_dir", default="./data/mscoco/test-images",
                         help="Path to the images to caption")
     parser.add_argument("--num_images", type=int, default=config.batch_size)
     parser.add_argument("--results", help="Path to results file", 

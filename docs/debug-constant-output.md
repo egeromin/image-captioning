@@ -66,3 +66,31 @@ by 1, and without changing the training data. The output of the RNN is still a
 single tensor with the number of time steps in the second dimension. Simply
 apply a custom layer that drops the first time step. 
 
+**This update solves the constant output problem!** However, unfortunately most
+of the captions are still inaccurate and the predictions are poor. Still only a
+handful of sentences appear, and these *sometimes* happen to be accurate, but
+not sufficiently so -- there is only 1 example I've found to be convincing.
+The results seem a little bit coarse, as though more training would do the
+trick.
+
+## Increasing the training time.
+
+Hypothesis: increased training will improve the results.
+
+This is suggested by the fact that there's a handful of sentences that appear
+frequently, and so the results look quite 'coarse', as though only broad
+clusters have been identified. Increased training suggests we might be able to
+improve results. 
+
+As there is more training, we still get certain sentences appearing very
+frequently, except that now it's different sentences. Is the randomization
+bracket too small? Training data should be shuffled, so this shouldn't be a
+problem. 
+
+
+## Overfitting
+
+The paper quotes overfitting. Do I get much better results by running on actual
+training images? What does the tensorboard graph look like once training is
+complete?
+

@@ -4,6 +4,7 @@ Define data generators for use with a keras model
 - add shuffling, cropping, and filling in
 """
 import sys
+import argparse
 from keras import backend as K
 
 import tensorflow as tf
@@ -40,13 +41,16 @@ class DataGenerator:
         # iterator = tfe.Iterator(self.dataset)
 
         images_and_captions = iterator.get_next()
-        while True:
-            yield K.get_session().run(
-                tuple_to_list_middleware(images_and_captions))
-            # yield next(iterator)
+        try:
+            while True:
+                yield K.get_session().run(
+                    tuple_to_list_middleware(images_and_captions))
+                # yield next(iterator)
+        except tf.errors.OutOfRangeError:
+            pass
 
 
-def make_data_generator(stage='train', num_chunks=1):
+def make_data_generator(stage='train', num_chunks=1, repeat=True):
 
     word_from_id, id_from_word, seq_length = load_conversions()
     vocabulary_size = len(word_from_id)
@@ -57,7 +61,8 @@ def make_data_generator(stage='train', num_chunks=1):
                              end_token=id_from_word['.'],
                              seq_length=seq_length,
                              vocabulary_size=vocabulary_size)
-    dataset = dataset.repeat()  # repeat dataset indefinitely
+    if repeat:
+        dataset = dataset.repeat()  # repeat dataset indefinitely
     dataset = dataset.batch(config.batch_size)
     # ipdb.set_trace()
     return DataGenerator(dataset)
@@ -76,6 +81,20 @@ if __name__ == "__main__":
 
     # sys.exit(1)
 
-    generator = make_data_generator(stage='val')
-    list(generator.generate())
+    parser = argparse.ArgumentParser(description="Check data readers")
+    parser.add_argument("--stage", help="stage to test",
+                        default="train")
+    parser.add_argument("--conc", help="Number of concurrent threads to read",
+                        type=int, default=1)
+
+    args = parser.parse_args()
+
+    generator = make_data_generator(stage=args.stage,
+                                    num_chunks=args.conc,
+                                    repeat=False)
+    for item in generator.generate():
+        pass  
+    # if this runs succesfully, then we shouldn't encounter any
+    # corrupted records during training either 
+    print("Iterated through dataset once successfully")
 
