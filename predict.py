@@ -1,6 +1,7 @@
 import tensorflow as tf
 import keras
 from keras.models import load_model, Model
+from keras import backend as K
 import os
 import numpy as np
 
@@ -16,7 +17,6 @@ from data import make_data_generator
 from convert_to_tfrecord import load_conversions
 
 from model import ExpandDims, image_captioning_model
-
 
 
 def load_images(images_dir, limit=None):
@@ -46,12 +46,112 @@ def load_images(images_dir, limit=None):
     return images
 
 
-def make_prediction(model, input_images, word_from_id, seq_length=10):
+def get_model_components(model):
+    """
+    Take the keras model and produce a dictionary with:
+        
+        - the imagenet layer as keras model
+        - the embedding as tensor
+        - the lstm as keras `LSTMCell`
+        - the final dense layer
+
+    These components can then be used separately.
+    """
+
+    imagenet_layer = Model(inputs=model.get_layer('input_1').output,
+                           outputs=model.get_layer('inception_v3').
+                           get_output_at(-1))
+
+    embedding = model.get_layer('embedding_1').embeddings
+    lstm_cell = model.get_layer('lstm_1').cell
+    dense = model.get_layer('time_distributed_1').layer
+
+    return imagenet_layer, embedding, lstm_cell, dense
+
+
+def compute_initial_state(model, input_images):
+    """Compute the initial state, given the input images"""
+
+    imagenet_layer, _, lstm_cell, _ = get_model_components(model)
+    image_classes = imagenet_layer.predict(input_images)
+    image_classes_tensor = tf.convert_to_tensor(image_classes)
+    initial_state = [
+        tf.zeros((input_images.shape[0], config.lstm_hidden_size),
+                 dtype=tf.float32),
+        tf.zeros((input_images.shape[0], config.lstm_hidden_size),
+                 dtype=tf.float32)
+    ]
+    _, state = lstm_cell.call(image_classes_tensor, initial_state)
+    return K.get_session().run(state)
+
+
+def compute_next_word_distribution(model, word_value,
+                                   current_state_value,
+                                   hidden_state_value):
+    """Compute the distribution of the next word in the sequence,
+    given the current word and the current state"""
+
+    _, embedding, lstm_cell, dense = get_model_components(model)
+
+    word = tf.placeholder(dtype=tf.int32,
+                          shape=word_value.shape)
+
+    current_state = tf.placeholder(dtype=tf.float32,
+                                   shape=current_state_value.shape)
+    hidden_state =  tf.placeholder(dtype=tf.float32,
+                                   shape=hidden_state_value.shape)
+
+    state = [current_state, hidden_state]
+
+    word_embedding = tf.gather(embedding, word)
+    output, next_state = lstm_cell.call(word_embedding, state)
+    word_distribution = tf.nn.softmax(dense(output))
+    
+    return K.get_session().run((word_distribution, next_state),
+                               feed_dict={
+                                   word: word_value,
+                                   current_state: current_state_value,
+                                   hidden_state: hidden_state_value
+                               })
+
+
+def make_prediction(model, input_images, word_from_id, seq_length=10,
+                    beam_window=20):
+    """
+    Generate sentences using beam search, i.e. at each time step
+    retain the K sentences with highest probability and use those to 
+    generate the sentences for the next time step
+    """
+    current_state_value, hidden_state_value = compute_initial_state(model,
+                                                                    input_images)
+    vocabulary_size = max(word_from_id.keys()) + 1
+    word_value = np.ones((input_images.shape[0],),
+                         dtype=np.int32) * vocabulary_size
+    word_dist, (current_state_value, hidden_state_value) = \
+            compute_next_word_distribution(model,
+                                           word_value,
+                                           current_state_value,
+                                           hidden_state_value)
+
+    ipdb.set_trace()
+    raise NotImplementedError("Unfinished")
+
+    # note: this implementation is very inefficient, because it does a full
+    # pass through all time steps at each new word by using `model.predict`
+    # instead, at each time step, we'd like to get the distribution for the
+    # next word by only doing a single forward pass through the lstm cell
+
+    # this would require redefining the keras model as a tensorflow model and
+    # loading the weights there 
+
+    # ipdb.set_trace()
+
     # imagenet_layer = Model(inputs=model.input,
     #                        outputs=model.layers[1].get_output_at(-1))
     # used for debugging
 
-    vocabulary_size = max(word_from_id.keys()) + 1
+    # how to minimise the number of forward props?
+
     captions = np.ones((input_images.shape[0], 1 + seq_length), 
                        dtype=np.int32) * vocabulary_size
 
