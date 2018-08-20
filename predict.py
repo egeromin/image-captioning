@@ -139,8 +139,6 @@ def make_prediction(model, input_images, word_from_id, seq_length=10,
         captions[:,i] = word_value
 
     # word ids to sentences
-    captions = captions[:,1:]
-    # ipdb.set_trace()
     prepared_captions = []
     for i in range(captions.shape[0]):
         caption_words = []
