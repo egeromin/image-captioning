@@ -127,50 +127,19 @@ def make_prediction(model, input_images, word_from_id, seq_length=10,
     vocabulary_size = max(word_from_id.keys()) + 1
     word_value = np.ones((input_images.shape[0],),
                          dtype=np.int32) * vocabulary_size
-    word_dist, (current_state_value, hidden_state_value) = \
-            compute_next_word_distribution(model,
-                                           word_value,
-                                           current_state_value,
-                                           hidden_state_value)
-
-    ipdb.set_trace()
-    raise NotImplementedError("Unfinished")
-
-    # note: this implementation is very inefficient, because it does a full
-    # pass through all time steps at each new word by using `model.predict`
-    # instead, at each time step, we'd like to get the distribution for the
-    # next word by only doing a single forward pass through the lstm cell
-
-    # this would require redefining the keras model as a tensorflow model and
-    # loading the weights there 
-
-    # ipdb.set_trace()
-
-    # imagenet_layer = Model(inputs=model.input,
-    #                        outputs=model.layers[1].get_output_at(-1))
-    # used for debugging
-
-    # how to minimise the number of forward props?
-
-    captions = np.ones((input_images.shape[0], 1 + seq_length), 
-                       dtype=np.int32) * vocabulary_size
-
+    captions = np.zeros((input_images.shape[0], seq_length), 
+                        dtype=np.int32)
     for i in range(seq_length):
-        predicted_captions = model.predict([input_images, captions])  # output is 1-hot encoded
-        assert(len(predicted_captions.shape) == 3)
-        predicted_captions = predicted_captions[:,:-1,:]  # drop the last token
-        assert(predicted_captions.shape[0] == captions.shape[0])
-        assert(predicted_captions.shape[1] == captions.shape[1]-1)
-
-        captions[:,i+1] = \
-                predicted_captions[:,i,:].argmax(axis=-1)
-
-    # imagenet_output = imagenet_layer.predict([input_images, captions])
-    # ipdb.set_trace() # check if the output of the imagenet model is always
-    # constant
+        word_dist, (current_state_value, hidden_state_value) = \
+                compute_next_word_distribution(model,
+                                               word_value,
+                                               current_state_value,
+                                               hidden_state_value)
+        word_value = word_dist.argmax(axis=-1)
+        captions[:,i] = word_value
 
     # word ids to sentences
-    captions = captions[:,1:]  # drop start word
+    captions = captions[:,1:]
     # ipdb.set_trace()
     prepared_captions = []
     for i in range(captions.shape[0]):
