@@ -115,6 +115,61 @@ def compute_next_word_distribution(model, word_value,
                                })
 
 
+def initialise_candidate_sentences(beam_window, 
+                                   word_dist,
+                                   current_state_value,
+                                   hidden_state_value):
+    top_k_next_words = \
+        np.argpartition(word_dist, beam_window)[:,-beam_window:]
+    probs = np.take_along_axis(word_dist,
+                               top_k_next_words,
+                               axis=1)
+    word_value = top_k_next_words.reshape(-1)
+    probs = probs.reshape(-1)
+
+    # expand state
+    current_state_value = np.repeat(
+        current_state_value, beam_window, axis=0)
+    hidden_state_value = np.repeat(
+        hidden_state_value, beam_window, axis=0)
+
+    return word_value, current_state_value, hidden_state_value, probs
+
+
+def select_new_candidates(beam_window,
+                          word_dist,
+                          current_state_value,
+                          hidden_state_value,
+                          probs):
+    top_k_next_words = \
+        np.argpartition(word_dist, beam_window)[:,-beam_window:]
+    new_current_probs = np.take_along_axis(word_dist,
+                                           top_k_next_words,
+                                           axis=1)
+    cumulative_probs = probs.reshape((-1, 1)) * new_current_probs
+    num_images = word_dist.shape[0] // beam_window
+    selected_sentences = np.zeros(probs.shape, dtype=np.int32)
+    new_probs = np.zeros(probs.shape)
+    new_word_value = np.zeros(probs.shape, dtype=np.int32)
+
+    for i in range(num_images):
+        prob_square = cumulative_probs[
+            i*beam_window:(i+1)*beam_window,:].reshape(-1)
+        top_prob_indices = np.argpartition(prob_square,
+                                           beam_window)[-beam_window:]
+        top_probs = prob_square[top_prob_indices]
+        selected_sentences[i*beam_window:(i+1)*beam_window] = \
+            top_prob_indices // beam_window
+        new_probs[i*beam_window:(i+1)*beam_window] = top_probs
+
+        words_in_square = \
+            top_k_next_words[i*beam_window:(i+1)*beam_window].reshape(-1)
+        new_words = words_in_square[top_prob_indices]
+        new_word_value[i*beam_window:(i+1)*beam_window] = new_words
+
+    return new_word_value, new_probs, selected_sentences
+
+
 def make_prediction(model, input_images, word_from_id, seq_length=10,
                     beam_window=20):
     """
@@ -127,26 +182,50 @@ def make_prediction(model, input_images, word_from_id, seq_length=10,
     vocabulary_size = max(word_from_id.keys()) + 1
     word_value = np.ones((input_images.shape[0],),
                          dtype=np.int32) * vocabulary_size
-    captions = np.zeros((input_images.shape[0], seq_length), 
+    captions = np.zeros((input_images.shape[0] * beam_window, seq_length), 
                         dtype=np.int32)
+
     for i in range(seq_length):
         word_dist, (current_state_value, hidden_state_value) = \
                 compute_next_word_distribution(model,
                                                word_value,
                                                current_state_value,
                                                hidden_state_value)
-        word_value = word_dist.argmax(axis=-1)
-        captions[:,i] = word_value
+        if i == 0:
+            # first word initialises our captions to contain beam_window
+            # candidate sentences per image
+            word_value, current_state_value, \
+            hidden_state_value, probs = \
+                initialise_candidate_sentences(beam_window,
+                                               word_dist,
+                                               current_state_value,
+                                               hidden_state_value)
+            captions[:,i] = word_value
+
+        else:
+            word_value, new_probs, selected_sentences = \
+                select_new_candidates(beam_window,
+                                      word_dist,
+                                      current_state_value,
+                                      hidden_state_value,
+                                      probs)
+            current_state_value = current_state_value[selected_sentences,:]
+            hidden_state_value = hidden_state_value[selected_sentences,:]
+            captions = captions[selected_sentences,:]
+            captions[:,i] = word_value
 
     # word ids to sentences
     prepared_captions = []
     for i in range(captions.shape[0]):
+        if i % beam_window == 0:
+            prepared_captions.append([])
+
         caption_words = []
         for j in range(captions.shape[1]):
             word_id = captions[i,j]
             caption_words.append(word_from_id[word_id])
 
-        prepared_captions.append(" ".join(caption_words))
+        prepared_captions[-1].append(" ".join(caption_words))
 
     return prepared_captions
 
