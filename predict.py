@@ -136,6 +136,29 @@ def initialise_candidate_sentences(beam_window,
     return word_value, current_state_value, hidden_state_value, probs
 
 
+def select_best_sentences(beam_window,
+                          words_in_square,
+                          word_dist_square,
+                          probs_square):
+    """given beam_window candidate sentences and their
+    probabilities, and for each candidate sentence the 
+    top most likely beam_window next words, construct the 
+    next beam_window most likely sentences, returning their
+    indices with respect to this square and their probabilities"""
+    cumulative_probs = (probs_square.reshape((-1, 1)) *
+        word_dist_square).reshape(-1)
+    # top_prob_indices = np.argpartition(cumulative_probs,
+    #                                    beam_window)[-beam_window:]
+    top_prob_indices = np.argsort(cumulative_probs)[-beam_window:]
+    # argpartition doesn't work on my system????
+
+    top_probs = cumulative_probs[top_prob_indices]
+    selected_sentences = top_prob_indices // beam_window
+    new_words = words_in_square[top_prob_indices]
+    ipdb.set_trace()
+    return selected_sentences, new_words, top_probs
+
+
 def select_new_candidates(beam_window,
                           word_dist,
                           current_state_value,
@@ -143,35 +166,39 @@ def select_new_candidates(beam_window,
                           probs):
     top_k_next_words = \
         np.argpartition(word_dist, beam_window)[:,-beam_window:]
-    new_current_probs = np.take_along_axis(word_dist,
-                                           top_k_next_words,
-                                           axis=1)
-    cumulative_probs = probs.reshape((-1, 1)) * new_current_probs
+    top_k_probs = np.take_along_axis(word_dist,
+                                     top_k_next_words,
+                                     axis=1)
+    # cumulative_probs = probs.reshape((-1, 1)) * new_current_probs
     num_images = word_dist.shape[0] // beam_window
     selected_sentences = np.zeros(probs.shape, dtype=np.int32)
     new_probs = np.zeros(probs.shape)
     new_word_value = np.zeros(probs.shape, dtype=np.int32)
 
     for i in range(num_images):
-        prob_square = cumulative_probs[
-            i*beam_window:(i+1)*beam_window,:].reshape(-1)
-        top_prob_indices = np.argpartition(prob_square,
-                                           beam_window)[-beam_window:]
-        top_probs = prob_square[top_prob_indices]
-        selected_sentences[i*beam_window:(i+1)*beam_window] = \
-            top_prob_indices // beam_window
-        new_probs[i*beam_window:(i+1)*beam_window] = top_probs
-
+        word_dist_square = top_k_probs[i*beam_window:(i+1)*beam_window,:]
+        probs_square = probs[i*beam_window:(i+1)*beam_window]
         words_in_square = \
-            top_k_next_words[i*beam_window:(i+1)*beam_window].reshape(-1)
-        new_words = words_in_square[top_prob_indices]
-        new_word_value[i*beam_window:(i+1)*beam_window] = new_words
+            top_k_next_words[i*beam_window:(i+1)*beam_window,:].reshape(-1)
+        best_sentences_square, new_words_square, new_probs_square = \
+            select_best_sentences(beam_window, words_in_square,
+                                  word_dist_square, probs_square)
+
+        # prob_square = cumulative_probs[
+        #     i*beam_window:(i+1)*beam_window,:].reshape(-1)
+        # top_prob_indices = np.argpartition(prob_square,
+        #                                    beam_window)[-beam_window:]
+        # top_probs = prob_square[top_prob_indices]
+        selected_sentences[i*beam_window:(i+1)*beam_window] = \
+            best_sentences_square + i*beam_window
+        new_probs[i*beam_window:(i+1)*beam_window] = new_probs_square
+        new_word_value[i*beam_window:(i+1)*beam_window] = new_words_square
 
     return new_word_value, new_probs, selected_sentences
 
 
 def make_prediction(model, input_images, word_from_id, seq_length=10,
-                    beam_window=20):
+                    beam_window=20, top_k=3):
     """
     Generate sentences using beam search, i.e. at each time step
     retain the K sentences with highest probability and use those to 
@@ -214,7 +241,28 @@ def make_prediction(model, input_images, word_from_id, seq_length=10,
             captions = captions[selected_sentences,:]
             captions[:,i] = word_value
 
-    # word ids to sentences
+        # ipdb.set_trace()
+
+    captions = select_top_sentences(captions, probs, beam_window, top_k)
+    return word_ids_to_sentences(word_from_id, captions, top_k)
+
+
+def select_top_sentences(captions, probs, beam_window, top_k):
+    """retain only the top_k captions of those remaining"""
+    num_images = captions.shape[0] // beam_window
+    remaining_captions = np.zeros((num_images * top_k, captions.shape[1]),
+                                  dtype=np.int32)
+    for i in range(num_images):
+        probs_image = probs[i*beam_window:(i+1)*beam_window]
+        best_captions = np.argsort(probs_image)[-top_k:]
+        remaining_captions[i*top_k:(i+1)*top_k] = \
+            captions[i*beam_window + best_captions]
+
+    return remaining_captions
+
+
+def word_ids_to_sentences(word_from_id, captions, beam_window):
+    """convert word ids to a dictionary of sentences"""
     prepared_captions = []
     for i in range(captions.shape[0]):
         if i % beam_window == 0:
