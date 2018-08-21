@@ -136,7 +136,7 @@ def main():
 
     print("seq_length = {}".format(seq_length))
 
-    model = image_captioning_model(seq_length, 1000,
+    model = image_captioning_model(seq_length, config.lstm_hidden_size,
                                    vocabulary_size)
 
     train(model, train_data_generator, valid_data_generator,
